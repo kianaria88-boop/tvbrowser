@@ -7,16 +7,20 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.os.Bundle
+import android.os.Message
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import java.io.ByteArrayInputStream
 
 // آدرس صفحه اول را اینجا عوض کنید
 private const val START_URL = "https://xhamster.com"
@@ -24,6 +28,20 @@ private const val START_URL = "https://xhamster.com"
 private const val DESKTOP_UA =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+// دامنه‌های تبلیغاتی مسدودشده. هر دامنه جدید را اینجا اضافه کنید
+private val BLOCKED = listOf(
+    "doubleclick.net", "googlesyndication.com", "googleadservices.com",
+    "exoclick.com", "exosrv.com", "exdynsrv.com", "realsrv.com", "magsrv.com",
+    "trafficjunky.net", "trafficjunky.com", "trafficfactory.biz",
+    "juicyads.com", "adsterra.com", "popads.net", "propellerads.com",
+    "onclickads.net", "clickadu.com", "tsyndicate.com"
+)
+
+private fun isBlocked(host: String?): Boolean {
+    if (host == null) return false
+    return BLOCKED.any { host == it || host.endsWith(".$it") }
+}
 
 /** مکان‌نمای موس مجازی */
 class CursorView(ctx: Context) : View(ctx) {
@@ -73,10 +91,40 @@ class MainActivity : Activity() {
             mediaPlaybackRequiresUserGesture = false
             userAgentString = DESKTOP_UA
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = false
         }
         web.isFocusable = false
-        web.webViewClient = WebViewClient()
+        web.webViewClient = object : WebViewClient() {
+            // درخواست‌های تبلیغاتی را خالی برمی‌گرداند
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? {
+                return if (isBlocked(request.url.host)) {
+                    WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+                } else null
+            }
+
+            // جلوگیری از رفتن به دامنه تبلیغاتی یا برنامه‌های بیرونی
+            override fun shouldOverrideUrlLoading(
+                view: WebView,
+                request: WebResourceRequest
+            ): Boolean {
+                val scheme = request.url.scheme
+                if (scheme != "http" && scheme != "https") return true
+                return isBlocked(request.url.host)
+            }
+        }
         web.webChromeClient = object : WebChromeClient() {
+            // پنجره‌های پاپ‌آپ باز نشوند
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: Message?
+            ): Boolean = false
+
             override fun onShowCustomView(view: View, cb: CustomViewCallback) {
                 customView = view
                 customCb = cb
